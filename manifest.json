@@ -8,11 +8,25 @@
   },
   "browser_action": {
     "default_title": "FuzzyTabs",
-    "default_icon": "icons/ic_search.svg",
-    "default_popup": "app.html"
+    "default_icon": "icons/ic_search.svg"
   },
   "permissions": [
-    "tabs"
+    "tabs",
+    "activeTab"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    "app.html",
+    "app.js",
+    "app.css",
+    "microfuzz.bundle.js",
+    "icons/ic_search.svg"
   ],
   "background": {
     "scripts": ["background.js"],

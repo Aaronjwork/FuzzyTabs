@@ -45,6 +45,22 @@
     api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         if (!msg || !msg.type) return; // not ours
+        
+        // Handle browser action click
+        if (msg.type === 'browser-action-clicked') {
+          // Send message to active tab's content script
+          api.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs && tabs.length > 0) {
+              api.tabs.sendMessage(tabs[0].id, { type: 'toggle-fuzzytabs' }, (response) => {
+                if (api.runtime.lastError) {
+                  log('Error sending message to content script:', api.runtime.lastError);
+                }
+              });
+            }
+          });
+          sendResponse({ ok: true });
+          return true;
+        }
         if (msg.type === 'get-all-tabs') {
           log('get-all-tabs request');
           api.tabs.query({}, (tabs) => {
@@ -110,6 +126,18 @@
       } catch (e) {
         log('onMessage handler error', e);
       }
+    });
+  }
+
+  // Handle browser action click
+  if (api && api.browserAction && api.browserAction.onClicked) {
+    api.browserAction.onClicked.addListener((tab) => {
+      // Send message to content script to toggle overlay
+      api.tabs.sendMessage(tab.id, { type: 'toggle-fuzzytabs' }, (response) => {
+        if (api.runtime.lastError) {
+          log('Error sending message to content script:', api.runtime.lastError);
+        }
+      });
     });
   }
 })();

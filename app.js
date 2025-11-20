@@ -383,7 +383,14 @@
 
   // Close the extension window
   function closeExtensionWindow() {
-    try { window.close(); } catch (_) {}
+    try {
+      // 在iframe模式下，通过postMessage通知父窗口关闭
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'close-fuzzytabs' }, '*');
+      } else {
+        window.close();
+      }
+    } catch (_) {}
   }
 
   initApp();
