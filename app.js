@@ -1,10 +1,10 @@
 (function() {
-  const DEBUG = false;
-  const log = (...args) => { if (!DEBUG) return; try { console.debug('[FuzzyTabs][content]', ...args); } catch (_) {} };
-  log('content script loaded', { url: location.href });
+  const DEBUG = true;
+  const log = (...args) => { if (!DEBUG) return; try { console.debug('[FuzzyTabs][app]', ...args); } catch (_) {} };
+  log('app loaded', { url: location.href });
 
   // State for results navigation
-  const STATE = { allTabs: [], tabs: [], focusedIndex: -1, query: '', allowMouseFocus: false };
+  const STATE = { allTabs: [], tabs: [], focusedIndex: -1, query: '', allowMouseFocus: false, currentTheme: 'dark', syncMode: 'auto', lastThemeTimestamp: 0 };
 
   function getUIElements() {
     const input = document.getElementById("fuzzy-tabs-input");
@@ -164,7 +164,7 @@
         titleSpan.className = 'fsl-title';
         const titleText = (t.title && t.title.trim()) ? t.title : (t.url || 'Untitled');
         if (STATE.query && matches && matches[0]) {
-          const titleMatches = matches[0]
+          const titleMatches = matches[0];
           titleSpan.appendChild(buildHighlightedSpan(titleText, titleMatches));
         } else {
           titleSpan.textContent = titleText;
@@ -174,7 +174,7 @@
         urlSpan.className = 'fsl-url';
         const urlText = t.url || '';
         if (STATE.query && matches && matches[1]) {
-          const urlMatches = matches[1]
+          const urlMatches = matches[1];
           urlSpan.appendChild(buildHighlightedSpan(urlText, urlMatches));
         } else {
           urlSpan.textContent = urlText;
@@ -285,6 +285,124 @@
     }
   }
 
+  // Close the extension window
+  function closeExtensionWindow() {
+    try {
+      // 在iframe模式下，通过postMessage通知父窗口关闭
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'close-fuzzytabs' }, '*');
+      } else {
+        window.close();
+      }
+    } catch (_) {}
+  }
+
+  // 主题相关函数
+  function initTheme() {
+    const api = (typeof browser !== 'undefined') ? browser : chrome;
+    
+    // 检查是否在iframe中
+    const isInIframe = window.parent && window.parent !== window;
+    
+    if (isInIframe) {
+      // 在iframe中，通过postMessage请求主题
+      window.parent.postMessage({ type: 'request-theme' }, '*');
+      
+      // 监听父窗口的主题响应
+      window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'theme-response') {
+          STATE.currentTheme = event.data.theme;
+          STATE.syncMode = event.data.syncMode || 'auto';
+          applyTheme(event.data.theme);
+        } else if (event.data && event.data.type === 'theme-changed') {
+          // 只有当时间戳更新时才应用主题
+          if (event.data.timestamp > STATE.lastThemeTimestamp) {
+            STATE.currentTheme = event.data.theme;
+            STATE.lastThemeTimestamp = event.data.timestamp;
+            applyTheme(event.data.theme);
+          }
+        }
+      });
+    } else {
+      // 不在iframe中，直接从background获取主题设置
+      api.runtime.sendMessage({ type: 'get-theme' }, (response) => {
+        const theme = response.theme || 'dark';
+        STATE.currentTheme = theme;
+        STATE.syncMode = response.syncMode || 'auto';
+        applyTheme(theme);
+      });
+    }
+  }
+
+  function applyTheme(theme) {
+    const page = document.querySelector('.fsl-page');
+    const themeIcon = document.querySelector('#theme-toggle .fsl-theme-icon');
+    
+    if (theme === 'light') {
+      page.classList.add('light-theme');
+      themeIcon.textContent = '☀️';
+    } else {
+      page.classList.remove('light-theme');
+      themeIcon.textContent = '🌙';
+    }
+  }
+
+  function toggleTheme() {
+    const newTheme = STATE.currentTheme === 'dark' ? 'light' : 'dark';
+    STATE.currentTheme = newTheme;
+    STATE.lastThemeTimestamp = Date.now();
+    
+    const api = (typeof browser !== 'undefined') ? browser : chrome;
+    // 通过background统一设置主题，这样所有窗口都会同步
+    api.runtime.sendMessage({ type: 'set-theme', theme: newTheme }, (response) => {
+      if (response && response.ok) {
+        applyTheme(newTheme);
+      }
+    });
+  }
+
+  // 打开设置页面
+  function openSettings() {
+    const api = (typeof browser !== 'undefined') ? browser : chrome;
+    
+    // 尝试打开选项页面
+    if (api.runtime && api.runtime.openOptionsPage) {
+      api.runtime.openOptionsPage();
+    } else {
+      // 备用方法：在新标签页打开
+      const extensionURL = api.runtime.getURL('options.html');
+      if (typeof window.open !== 'undefined') {
+        window.open(extensionURL, '_blank');
+      } else {
+        // 如果在iframe中，通过父窗口打开
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({
+            type: 'open-settings',
+            url: extensionURL
+          }, '*');
+        } else {
+          // 最后的备选：复制URL到剪贴板
+          const textarea = document.createElement('textarea');
+          textarea.value = extensionURL;
+          document.body.appendChild(textarea);
+          textarea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textarea);
+          
+          // 显示提示
+          const input = document.getElementById('fuzzy-tabs-input');
+          if (input) {
+            const originalPlaceholder = input.placeholder;
+            input.placeholder = '设置链接已复制到剪贴板，请在新标签页粘贴打开';
+            setTimeout(() => {
+              input.placeholder = originalPlaceholder;
+            }, 3000);
+          }
+        }
+      }
+    }
+  }
+
   function initApp() {
     log('initApp');
     // On open, require a fresh mouse move to enable hover focusing
@@ -296,6 +414,57 @@
       setTimeout(() => input.focus(), 50);
       input.addEventListener('input', () => computeResultsAndRender());
     }
+
+    // 初始化主题
+    initTheme();
+
+    // 绑定主题切换按钮
+    const themeToggle = document.getElementById('theme-toggle');
+    if (themeToggle) {
+      themeToggle.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleTheme();
+      });
+    }
+
+    // 绑定设置按钮
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) {
+      settingsBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openSettings();
+      });
+    }
+
+    // 监听来自background的主题变更消息
+    const api = (typeof browser !== 'undefined') ? browser : chrome;
+    if (api && api.runtime && api.runtime.onMessage) {
+      api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+        if (msg && msg.type === 'theme-changed') {
+          // 只有当时间戳更新时才应用主题
+          if (msg.timestamp > STATE.lastThemeTimestamp) {
+            STATE.currentTheme = msg.theme;
+            STATE.lastThemeTimestamp = msg.timestamp;
+            applyTheme(msg.theme);
+          }
+        }
+      });
+    }
+    
+    // 定期检查主题同步（每5秒检查一次）
+    setInterval(() => {
+      if (STATE.syncMode === 'auto') {
+        api.runtime.sendMessage({ type: 'get-theme' }, (response) => {
+          if (response && response.theme && response.theme !== STATE.currentTheme) {
+            log('检测到主题不一致，正在同步:', { current: STATE.currentTheme, stored: response.theme });
+            STATE.currentTheme = response.theme;
+            applyTheme(response.theme);
+          }
+        });
+      }
+    }, 3000);
 
     // Enable mouse-driven focusing after actual mouse movement
     document.addEventListener('mousemove', () => {
@@ -379,18 +548,6 @@
 
     // Load tabs list under the input
     fetchAllTabsAndRender();
-  }
-
-  // Close the extension window
-  function closeExtensionWindow() {
-    try {
-      // 在iframe模式下，通过postMessage通知父窗口关闭
-      if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ type: 'close-fuzzytabs' }, '*');
-      } else {
-        window.close();
-      }
-    } catch (_) {}
   }
 
   initApp();

@@ -8,7 +8,17 @@
 </head>
 <body>
   <div class="fsl-page" role="application" aria-label="FuzzyTabs">
-    <input id="fuzzy-tabs-input" type="text" autocomplete="off" placeholder="Start typing something..."/>
+    <div class="fsl-header">
+      <input id="fuzzy-tabs-input" type="text" autocomplete="off" placeholder="Start typing something..."/>
+      <div class="fsl-theme-selector">
+        <button id="settings-btn" class="fsl-theme-btn" title="打开设置">
+          <span class="fsl-theme-icon">⚙️</span>
+        </button>
+        <button id="theme-toggle" class="fsl-theme-btn" title="切换主题">
+          <span class="fsl-theme-icon">🌙</span>
+        </button>
+      </div>
+    </div>
     <ul class="fsl-results" aria-label="Open tabs"></ul>
   </div>
   <script src="microfuzz.bundle.js"></script>

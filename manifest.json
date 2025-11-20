@@ -3,6 +3,11 @@
   "name": "FuzzyTabs",
   "version": "1.2.1",
   "description": "Fuzzy-search through opened tabs",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "fuzzytabs@example.com"
+    }
+  },
   "icons": {
     "48": "icons/ic_search.svg"
   },
@@ -10,13 +15,18 @@
     "default_title": "FuzzyTabs",
     "default_icon": "icons/ic_search.svg"
   },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
   "permissions": [
     "tabs",
-    "activeTab"
+    "activeTab",
+    "storage"
   ],
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
+      "matches": ["http://*/*", "https://*/*", "file:///*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
@@ -26,6 +36,8 @@
     "app.js",
     "app.css",
     "microfuzz.bundle.js",
+    "options.html",
+    "options.js",
     "icons/ic_search.svg"
   ],
   "background": {
@@ -35,7 +47,8 @@
   "commands": {
     "_execute_browser_action": {
       "suggested_key": {
-        "default": "Ctrl+Shift+Space"
+        "default": "Shift+Alt+I",
+        "mac": "Shift+Command+I"
       },
       "description": "Open FuzzyTabs"
     }

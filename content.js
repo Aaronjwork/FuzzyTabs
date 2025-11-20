@@ -1,7 +1,20 @@
 (function() {
-  const DEBUG = false;
+  const DEBUG = true;
   const log = (...args) => { if (!DEBUG) return; try { console.debug('[FuzzyTabs][content]', ...args); } catch (_) {} };
-  log('content script loaded', { url: location.href });
+  
+  // 添加浏览器检测
+  const isEdge = /Edg\//.test(navigator.userAgent);
+  const isChrome = /Chrome\//.test(navigator.userAgent) && !isEdge;
+  const isFirefox = /Firefox\//.test(navigator.userAgent);
+  
+  log('content script loaded', {
+    url: location.href,
+    userAgent: navigator.userAgent,
+    isEdge,
+    isChrome,
+    isFirefox,
+    api: typeof browser !== 'undefined' ? 'browser' : 'chrome'
+  });
 
   let overlay = null;
   let iframe = null;
@@ -52,10 +65,31 @@
       }
     });
 
-    // 监听iframe内关闭事件
+    // 监听iframe内事件（合并关闭事件、主题请求和设置请求）
     window.addEventListener('message', (event) => {
       if (event.data && event.data.type === 'close-fuzzytabs') {
         hideOverlay();
+      } else if (event.data && event.data.type === 'request-theme') {
+        // 获取当前主题并发送给iframe
+        const api = (typeof browser !== 'undefined') ? browser : chrome;
+        api.runtime.sendMessage({ type: 'get-theme' }, (response) => {
+          if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({
+              type: 'theme-response',
+              theme: response.theme,
+              syncMode: response.syncMode
+            }, '*');
+          }
+        });
+      } else if (event.data && event.data.type === 'open-settings') {
+        // 在新标签页打开设置页面
+        const api = (typeof browser !== 'undefined') ? browser : chrome;
+        if (api.runtime && api.runtime.openOptionsPage) {
+          api.runtime.openOptionsPage();
+        } else {
+          // 备用方法
+          window.open(event.data.url, '_blank');
+        }
       }
     });
   }
@@ -96,15 +130,34 @@
   }
 
   // 监听来自background的消息
-  if (typeof browser !== 'undefined' ? browser.runtime : chrome.runtime) {
-    const api = (typeof browser !== 'undefined') ? browser : chrome;
-    api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-      if (msg && msg.type === 'toggle-fuzzytabs') {
-        toggleOverlay();
-        sendResponse({ ok: true });
-      }
-      return true;
-    });
+  try {
+    const api = (typeof browser !== 'undefined' ? browser : chrome);
+    if (api && api.runtime) {
+      log('Setting up message listener', { api: 'browser' in window ? 'browser' : 'chrome' });
+      api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+        log('Received message', msg);
+        if (msg && msg.type === 'toggle-fuzzytabs') {
+          log('Toggling overlay');
+          toggleOverlay();
+          sendResponse({ ok: true });
+        } else if (msg && msg.type === 'theme-changed') {
+          // 转发主题变更消息到iframe
+          if (iframe && iframe.contentWindow) {
+            iframe.contentWindow.postMessage({
+              type: 'theme-changed',
+              theme: msg.theme,
+              timestamp: msg.timestamp
+            }, '*');
+          }
+          sendResponse({ ok: true });
+        }
+        return true;
+      });
+    } else {
+      log('Error: api.runtime not available', { api });
+    }
+  } catch (e) {
+    log('Error setting up message listener', e);
   }
 
   // ESC键关闭
@@ -113,6 +166,55 @@
       hideOverlay();
     }
   });
+
+  // 添加测试按钮（立即执行，不等待 DOMContentLoaded）
+  if (DEBUG) {
+    const addTestButton = () => {
+      if (document.getElementById('fuzzytabs-test-btn')) {
+        return; // 避免重复添加
+      }
+      
+      const testBtn = document.createElement('button');
+      testBtn.id = 'fuzzytabs-test-btn';
+      testBtn.textContent = 'Test FuzzyTabs';
+      testBtn.style.cssText = `
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 999999;
+        background: #007acc;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+      `;
+      testBtn.addEventListener('click', () => {
+        log('Test button clicked');
+        toggleOverlay();
+      });
+      
+      // 确保 body 存在
+      if (document.body) {
+        document.body.appendChild(testBtn);
+        log('Test button added');
+      } else {
+        document.addEventListener('DOMContentLoaded', () => {
+          document.body.appendChild(testBtn);
+          log('Test button added after DOM loaded');
+        });
+      }
+    };
+    
+    // 立即尝试添加按钮
+    addTestButton();
+    
+    // 也尝试在 DOM 加载后添加（以防万一）
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', addTestButton);
+    }
+  }
 
   log('content script initialized');
 })();
