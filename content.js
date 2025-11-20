@@ -104,10 +104,24 @@
     isVisible = true;
     overlay.style.display = 'block';
     
-    // 聚焦到iframe
+    // 聚焦到iframe和搜索框
     setTimeout(() => {
       if (iframe && iframe.contentWindow) {
         iframe.contentWindow.focus();
+        // 尝试聚焦到搜索输入框
+        try {
+          const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+          const searchInput = iframeDoc.getElementById('fuzzy-tabs-input');
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+            log('Search input focused successfully');
+          } else {
+            log('Search input not found');
+          }
+        } catch (e) {
+          log('Error focusing search input:', e);
+        }
       }
     }, 100);
   }
@@ -166,55 +180,4 @@
       hideOverlay();
     }
   });
-
-  // 添加测试按钮（立即执行，不等待 DOMContentLoaded）
-  if (DEBUG) {
-    const addTestButton = () => {
-      if (document.getElementById('fuzzytabs-test-btn')) {
-        return; // 避免重复添加
-      }
-      
-      const testBtn = document.createElement('button');
-      testBtn.id = 'fuzzytabs-test-btn';
-      testBtn.textContent = 'Test FuzzyTabs';
-      testBtn.style.cssText = `
-        position: fixed;
-        top: 10px;
-        right: 10px;
-        z-index: 999999;
-        background: #007acc;
-        color: white;
-        border: none;
-        padding: 5px 10px;
-        border-radius: 3px;
-        cursor: pointer;
-        font-size: 12px;
-      `;
-      testBtn.addEventListener('click', () => {
-        log('Test button clicked');
-        toggleOverlay();
-      });
-      
-      // 确保 body 存在
-      if (document.body) {
-        document.body.appendChild(testBtn);
-        log('Test button added');
-      } else {
-        document.addEventListener('DOMContentLoaded', () => {
-          document.body.appendChild(testBtn);
-          log('Test button added after DOM loaded');
-        });
-      }
-    };
-    
-    // 立即尝试添加按钮
-    addTestButton();
-    
-    // 也尝试在 DOM 加载后添加（以防万一）
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', addTestButton);
-    }
-  }
-
-  log('content script initialized');
 })();
